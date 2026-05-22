@@ -1,7 +1,8 @@
 import { readConfig, writeConfig } from './rss-config';
 import { fetchRssItems } from './rss';
 import { appendHistory, isPosted } from './rss-history';
-import { createPost } from './facebook';
+import { createPost, createMultiPhotoPost, uploadPhoto } from './facebook';
+import { generateFbPost } from './openai-post';
 
 export type AutomationSummary = {
   posted: string[];
@@ -10,11 +11,22 @@ export type AutomationSummary = {
   disabled?: boolean;
 };
 
-function format(template: string, item: { title: string; link: string; description: string }) {
-  return template
-    .replace('{title}', item.title)
-    .replace('{link}', item.link)
-    .replace('{description}', item.description);
+async function publishItem(
+  message: string,
+  images: string[],
+  link: string,
+  includeImage: boolean,
+): Promise<{ id: string }> {
+  const imgs = includeImage ? images : [];
+
+  if (imgs.length > 1) {
+    // Upload each as unpublished then create multi-photo post
+    const uploaded = await Promise.all(imgs.slice(0, 5).map((url) => uploadPhoto(url)));
+    const photoIds = uploaded.map((p) => p.id);
+    return createMultiPhotoPost({ message, photoIds, link: link || undefined });
+  }
+
+  return createPost({ message, imageUrl: imgs[0], link: link || undefined });
 }
 
 function weekStart() {
@@ -25,20 +37,17 @@ function weekStart() {
 }
 
 export async function runAutomation(): Promise<AutomationSummary> {
-  const cfg = readConfig();
+  const cfg = await readConfig();
   if (!cfg.enabled) return { posted: [], skipped: 0, failed: [], disabled: true };
 
   const items = await fetchRssItems();
-  const fresh = items.filter((i) => !isPosted(i.id));
+  const freshChecks = await Promise.all(items.map((i) => isPosted(i.id).then((p) => ({ item: i, posted: p }))));
+  const fresh = freshChecks.filter((x) => !x.posted).map((x) => x.item);
   const toPost = fresh
     .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
     .slice(0, cfg.maxPostsPerRun);
 
-  const summary: AutomationSummary = {
-    posted: [],
-    skipped: fresh.length - toPost.length,
-    failed: [],
-  };
+  const summary: AutomationSummary = { posted: [], skipped: fresh.length - toPost.length, failed: [] };
 
   const ws = weekStart();
   if (cfg.weekStartDate !== ws) {
@@ -48,23 +57,20 @@ export async function runAutomation(): Promise<AutomationSummary> {
 
   for (const item of toPost) {
     try {
-      const message = format(cfg.template, item);
-      const result = await createPost({
-        message,
-        imageUrl: cfg.includeImage ? item.image : undefined,
-      });
-      appendHistory({ id: item.id, title: item.title, fbPostId: result.id, status: 'posted', timestamp: new Date().toISOString() });
+      const message = await generateFbPost(item);
+      const result = await publishItem(message, item.images, item.link, cfg.includeImage);
+      await appendHistory({ id: item.id, title: item.title, fbPostId: result.id, status: 'posted', timestamp: new Date().toISOString() });
       cfg.autoPostsThisWeek = (cfg.autoPostsThisWeek ?? 0) + 1;
       cfg.lastPostedTitle = item.title;
       summary.posted.push(item.title);
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      appendHistory({ id: item.id, title: item.title, status: 'failed', timestamp: new Date().toISOString() });
+      await appendHistory({ id: item.id, title: item.title, status: 'failed', timestamp: new Date().toISOString() });
       summary.failed.push({ title: item.title, error });
     }
   }
 
   cfg.lastCheckTime = new Date().toISOString();
-  writeConfig(cfg);
+  await writeConfig(cfg);
   return summary;
 }

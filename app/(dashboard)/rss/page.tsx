@@ -2,9 +2,8 @@ import { readConfig } from '@/lib/rss-config';
 import { readHistory } from '@/lib/rss-history';
 import { RssClient } from './rss-client';
 
-export default function RssPage() {
-  const config = readConfig();
-  const history = readHistory().slice(0, 20);
+export default async function RssPage() {
+  const [config, history] = await Promise.all([readConfig(), readHistory()]);
   const feedUrl = process.env.RSS_FEED_URL ?? '(not set)';
 
   return (

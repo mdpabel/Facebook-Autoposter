@@ -52,6 +52,27 @@ export function getPosts(limit = 10, after?: string): Promise<FBPostsResponse> {
   );
 }
 
+/** Upload a photo as unpublished — returns the photo's internal ID for use in attached_media. */
+export function uploadPhoto(imageUrl: string): Promise<{ id: string }> {
+  const body = new URLSearchParams({ url: imageUrl, published: 'false', access_token: tok() });
+  return fbFetch(`/${pid()}/photos`, { method: 'POST', body });
+}
+
+/**
+ * Create a feed post with multiple attached photos (carousel-style multi-image post).
+ * photoIds must come from uploadPhoto().
+ */
+export function createMultiPhotoPost(params: {
+  message: string;
+  photoIds: string[];
+  link?: string;
+}): Promise<{ id: string }> {
+  const body = new URLSearchParams({ message: params.message, access_token: tok() });
+  if (params.link) body.set('link', params.link);
+  body.set('attached_media', JSON.stringify(params.photoIds.map((id) => ({ media_fbid: id }))));
+  return fbFetch(`/${pid()}/feed`, { method: 'POST', body });
+}
+
 export function createPost(params: {
   message: string;
   link?: string;

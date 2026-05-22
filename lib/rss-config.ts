@@ -1,8 +1,4 @@
-import fs from 'fs';
-import path from 'path';
-
-const DATA_DIR = path.join(process.cwd(), 'data');
-const FILE = path.join(DATA_DIR, 'rss-config.json');
+import redis from './redis';
 
 export type RssConfig = {
   enabled: boolean;
@@ -25,18 +21,14 @@ export const DEFAULT_CONFIG: RssConfig = {
   autoPostsThisWeek: 0,
 };
 
-function ensure() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+const KEY = 'rss:config';
+
+export async function readConfig(): Promise<RssConfig> {
+  const raw = await redis.get<RssConfig>(KEY);
+  if (!raw) return { ...DEFAULT_CONFIG };
+  return { ...DEFAULT_CONFIG, ...raw };
 }
 
-export function readConfig(): RssConfig {
-  ensure();
-  if (!fs.existsSync(FILE)) return { ...DEFAULT_CONFIG };
-  try { return { ...DEFAULT_CONFIG, ...JSON.parse(fs.readFileSync(FILE, 'utf8')) }; }
-  catch { return { ...DEFAULT_CONFIG }; }
-}
-
-export function writeConfig(cfg: RssConfig) {
-  ensure();
-  fs.writeFileSync(FILE, JSON.stringify(cfg, null, 2));
+export async function writeConfig(cfg: RssConfig): Promise<void> {
+  await redis.set(KEY, cfg);
 }

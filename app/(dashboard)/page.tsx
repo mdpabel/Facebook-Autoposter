@@ -16,7 +16,7 @@ export default async function DashboardPage() {
   const [page, posts, rssConfig] = await Promise.all([
     getPage().catch(() => null),
     getPosts(5).catch(() => ({ data: [] })),
-    Promise.resolve(readConfig()),
+    readConfig(),
   ]);
 
   return (
