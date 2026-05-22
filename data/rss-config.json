@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "template": "{title}\n\n{link}",
+  "checkInterval": "1hr",
+  "includeImage": true,
+  "maxPostsPerRun": 1,
+  "autoPostsThisWeek": 0
+}
