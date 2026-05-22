@@ -51,11 +51,11 @@ export async function postRssItemAction(item: {
     const imgs = cfg.includeImage ? (item.images ?? (item.image ? [item.image] : [])) : [];
 
     let result: { id: string };
-    if (imgs.length > 1) {
+    if (imgs.length > 0) {
       const uploaded = await Promise.all(imgs.slice(0, 5).map((url) => uploadPhoto(url)));
       result = await createMultiPhotoPost({ message, photoIds: uploaded.map((p) => p.id), link: item.link || undefined });
     } else {
-      result = await createPost({ message, imageUrl: imgs[0], link: item.link || undefined });
+      result = await createPost({ message, link: item.link || undefined });
     }
 
     await appendHistory({ id: item.id, title: item.title, fbPostId: result.id, status: 'posted', timestamp: new Date().toISOString() });

@@ -15,6 +15,7 @@ type MediaContent = { $?: { url?: string } };
 type CustomItem = {
   'media:content'?: MediaContent | MediaContent[];
   'media:thumbnail'?: MediaContent;
+  'content:encoded'?: string;
   enclosure?: { url?: string; type?: string };
 };
 
@@ -23,6 +24,7 @@ const parser = new Parser<Record<string, unknown>, CustomItem>({
     item: [
       ['media:content', 'media:content', { keepArray: true }],
       ['media:thumbnail', 'media:thumbnail', { keepArray: false }],
+      ['content:encoded', 'content:encoded', { keepArray: false }],
     ],
   },
 });
@@ -42,6 +44,14 @@ function extractImages(item: CustomItem & Parser.Item): string[] {
 
   if (item.enclosure?.url && item.enclosure.type?.startsWith('image/')) {
     add(item.enclosure.url);
+  }
+
+  // Fallback: extract <img src> from content HTML (WordPress and many CMS feeds)
+  const html = item['content:encoded'] ?? item.content ?? '';
+  const imgRe = /<img[^>]+src=["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = imgRe.exec(html)) !== null) {
+    add(m[1]);
   }
 
   return [...seen];

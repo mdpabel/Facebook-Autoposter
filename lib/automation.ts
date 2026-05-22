@@ -17,16 +17,15 @@ async function publishItem(
   link: string,
   includeImage: boolean,
 ): Promise<{ id: string }> {
-  const imgs = includeImage ? images : [];
+  const imgs = includeImage ? images.slice(0, 5) : [];
 
-  if (imgs.length > 1) {
-    // Upload each as unpublished then create multi-photo post
-    const uploaded = await Promise.all(imgs.slice(0, 5).map((url) => uploadPhoto(url)));
+  if (imgs.length > 0) {
+    const uploaded = await Promise.all(imgs.map((url) => uploadPhoto(url)));
     const photoIds = uploaded.map((p) => p.id);
     return createMultiPhotoPost({ message, photoIds, link: link || undefined });
   }
 
-  return createPost({ message, imageUrl: imgs[0], link: link || undefined });
+  return createPost({ message, link: link || undefined });
 }
 
 function weekStart() {

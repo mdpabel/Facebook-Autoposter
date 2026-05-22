@@ -7,13 +7,12 @@ export const runtime = 'nodejs';
 const LIVE_URL = 'https://fb.mdpabel.com/api/cron/rss';
 
 async function isAuthorized(req: NextRequest): Promise<boolean> {
+  const signature = req.headers.get('Upstash-Signature');
   const currentKey = process.env.QSTASH_CURRENT_SIGNING_KEY;
   const nextKey = process.env.QSTASH_NEXT_SIGNING_KEY;
 
-  // Upstash QStash signature verification (production)
-  if (currentKey && nextKey) {
-    const signature = req.headers.get('Upstash-Signature');
-    if (!signature) return false;
+  // QStash signature path — only when the header is actually present
+  if (signature && currentKey && nextKey) {
     try {
       const receiver = new Receiver({ currentSigningKey: currentKey, nextSigningKey: nextKey });
       const body = await req.text();
@@ -23,7 +22,7 @@ async function isAuthorized(req: NextRequest): Promise<boolean> {
     }
   }
 
-  // Fallback: plain Bearer token for local dev / other schedulers
+  // Bearer token — Upstash Schedule, local dev, or any plain HTTP caller
   const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
     return req.headers.get('authorization') === `Bearer ${cronSecret}`;
