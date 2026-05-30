@@ -72,13 +72,26 @@ function extractImages(item: CustomItem & Parser.Item): string[] {
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 
+/** fetch() with a few retries — the CMS occasionally drops the first connection (ECONNRESET). */
+export async function fetchRetry(url: string, init?: RequestInit, attempts = 3): Promise<Response> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Fetch the article page and pull its Open Graph image — the same "featured image"
  * Facebook uses for link previews. Used as a fallback when the feed carries no images.
  */
 export async function fetchOgImage(url: string): Promise<string | undefined> {
   try {
-    const res = await fetch(url, { headers: { 'user-agent': UA }, cache: 'no-store' });
+    const res = await fetchRetry(url, { headers: { 'user-agent': UA }, cache: 'no-store' });
     if (!res.ok) return undefined;
     const html = await res.text();
     const m =
@@ -108,7 +121,7 @@ export async function fetchPostImages(link: string): Promise<PostImage[]> {
     const slug = new URL(link).pathname.split('/').filter(Boolean).pop();
     if (!slug) return [];
     const api = `${base.replace(/\/$/, '')}/wp-json/wp/v2/posts?slug=${encodeURIComponent(slug)}&_embed=1`;
-    const res = await fetch(api, { headers: { 'user-agent': UA }, cache: 'no-store' });
+    const res = await fetchRetry(api, { headers: { 'user-agent': UA }, cache: 'no-store' });
     if (!res.ok) return [];
     const arr = (await res.json()) as Array<{
       content?: { rendered?: string };

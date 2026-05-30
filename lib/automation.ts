@@ -3,7 +3,7 @@ import { fetchRssItems, fetchOgImage, fetchPostImages, type PostImage } from './
 import { appendHistory, isPosted } from './rss-history';
 import { createPost, schedulePhotoPost } from './facebook';
 import { generateFbPost, generateFbPostFromImage } from './openai-post';
-import redis from './redis';
+import { enqueueBluesky, drainBlueskyQueue } from './bluesky-queue';
 
 // Hard cap on posts created per article so a 50-image article can't flood the queue.
 const MAX_IMAGES_PER_ARTICLE = 12;
@@ -13,17 +13,10 @@ export type AutomationSummary = {
   skipped: number;
   failed: { title: string; error: string }[];
   disabled?: boolean;
+  bluesky?: { posted: number; failed: number; pending: number };
 };
 
-const NEXT_SLOT_KEY = 'rss:next_slot';
-
-async function claimSlot(): Promise<number> {
-  const stored = await redis.get<number>(NEXT_SLOT_KEY);
-  const nowSec = Math.floor(Date.now() / 1000);
-  const slot = stored && stored > nowSec ? stored : nowSec;
-  await redis.set(NEXT_SLOT_KEY, slot + 3600);
-  return slot;
-}
+const nowSec = () => Math.floor(Date.now() / 1000);
 
 function weekStart() {
   const d = new Date();
@@ -72,25 +65,28 @@ export async function runAutomation(): Promise<AutomationSummary> {
 
       if (images.length === 0) {
         // No image anywhere → text-only post with the link.
-        const text = await generateFbPost(item);
-        const res = await createPost({ message: `${text}\n\n${item.link}` });
+        const caption = await generateFbPost(item);
+        const res = await createPost({ message: `${caption}\n\n${item.link}` });
         lastPostId = res.id;
+        await enqueueBluesky({ caption, link: item.link, publishAt: nowSec() });
       } else {
-        // One post per image. The first (featured) publishes immediately; the rest
-        // are scheduled one hour apart via claimSlot().
+        // One post per image — all published immediately to both platforms (no FB
+        // scheduling) so Facebook and Bluesky can be tested together.
         let postedCount = 0;
         for (const img of images) {
           try {
-            const message = await generateFbPostFromImage({
+            const caption = await generateFbPostFromImage({
               imageUrl: img.url,
               alt: img.alt,
               headings: item.headings,
               title: item.title,
-              link: item.link,
             });
-            const slot = await claimSlot();
-            const res = await schedulePhotoPost({ message, imageUrl: img.url, scheduledTime: slot });
+            const res = await schedulePhotoPost({
+              message: `${caption}\n\n${item.link}`,
+              imageUrl: img.url,
+            });
             lastPostId = res.id;
+            await enqueueBluesky({ caption, link: item.link, imageUrl: img.url, alt: img.alt, publishAt: nowSec() });
             postedCount++;
           } catch (imgErr) {
             const msg = imgErr instanceof Error ? imgErr.message : String(imgErr);
@@ -120,5 +116,8 @@ export async function runAutomation(): Promise<AutomationSummary> {
 
   cfg.lastCheckTime = new Date().toISOString();
   await writeConfig(cfg);
+
+  // Publish the Bluesky posts queued this run (all due immediately).
+  summary.bluesky = await drainBlueskyQueue();
   return summary;
 }

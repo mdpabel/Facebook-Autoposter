@@ -7,7 +7,6 @@ export async function generateFbPostFromImage(params: {
   imageUrl: string;
   headings: string[];
   title: string;
-  link: string;
   alt?: string;
 }): Promise<string> {
   const headingsContext = params.headings.length > 0
@@ -54,8 +53,7 @@ export async function generateFbPostFromImage(params: {
     temperature: 0.85,
   });
 
-  const text = completion.choices[0].message.content?.trim() ?? params.title;
-  return `${text}\n\n${params.link}`;
+  return completion.choices[0].message.content?.trim() ?? params.title;
 }
 
 export async function generateFbPost(item: Pick<RssItem, 'title' | 'description' | 'link'>): Promise<string> {
