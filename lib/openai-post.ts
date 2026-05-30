@@ -8,27 +8,32 @@ export async function generateFbPostFromImage(params: {
   headings: string[];
   title: string;
   link: string;
+  alt?: string;
 }): Promise<string> {
   const headingsContext = params.headings.length > 0
     ? `\n\nKey topics from the article:\n${params.headings.map((h) => `- ${h}`).join('\n')}`
     : '';
+  const altContext = params.alt ? `\n\nImage caption/alt text: ${params.alt}` : '';
 
   const completion = await client.chat.completions.create({
-    model: 'gpt-4o',
+    model: 'gpt-4o-mini',
     messages: [
       {
         role: 'system',
         content: [
-          'You are an expert Facebook content writer for a web development and digital marketing page.',
-          'Write engaging posts inspired by the provided image and article context.',
-          'Guidelines:',
-          '- 80–180 words max',
-          '- 2-3 relevant hashtags at the end',
-          '- 1-2 emojis woven naturally into the text',
-          '- End with a soft call-to-action (question or invite to read)',
-          '- Do NOT include any URL in the text — the link will be appended separately',
+          'You are a Facebook content writer for a web development and digital marketing page.',
+          'Write a post inspired by the provided image and article context.',
+          'Style rules:',
+          '- Sound like a real person — friendly, natural, conversational',
+          '- Use simple, basic English with short, clear sentences',
+          '- 60–150 words',
+          '- Use at most ONE emoji, only if it truly fits (none is fine — do not force it)',
+          '- Add 2-3 relevant hashtags at the end',
+          '- End with a soft call-to-action (a question or an invite to read)',
+          '- Write SEO-friendly, optimized content that still reads naturally',
+          '- Do NOT include any URL in the text — the link is added separately',
           '- Write in first-person plural ("we", "our") or second-person ("you")',
-          '- Base the post on what you observe in the image plus the article context provided',
+          '- Base the post on what you see in the image plus the article context',
         ].join('\n'),
       },
       {
@@ -40,7 +45,7 @@ export async function generateFbPostFromImage(params: {
           },
           {
             type: 'text',
-            text: `Article: ${params.title}${headingsContext}\n\nWrite a Facebook post inspired by this image and the article.`,
+            text: `Article: ${params.title}${headingsContext}${altContext}\n\nWrite a Facebook post inspired by this image and the article.`,
           },
         ],
       },
@@ -60,14 +65,17 @@ export async function generateFbPost(item: Pick<RssItem, 'title' | 'description'
       {
         role: 'system',
         content: [
-          'You are an expert Facebook content writer for a web development and digital marketing page.',
-          'Write engaging, SEO-friendly posts that feel natural and human — never robotic or salesy.',
-          'Guidelines:',
-          '- 80–180 words max',
-          '- 2-3 relevant hashtags at the end',
-          '- 1-2 emojis woven naturally into the text',
-          '- End with a soft call-to-action (question or invite to read)',
-          '- Do NOT include any URL in the text — it will be attached separately as a link',
+          'You are a Facebook content writer for a web development and digital marketing page.',
+          'Write a post that feels natural and human — never robotic or salesy.',
+          'Style rules:',
+          '- Sound like a real person — friendly, natural, conversational',
+          '- Use simple, basic English with short, clear sentences',
+          '- 60–150 words',
+          '- Use at most ONE emoji, only if it truly fits (none is fine — do not force it)',
+          '- Add 2-3 relevant hashtags at the end',
+          '- End with a soft call-to-action (a question or an invite to read)',
+          '- Write SEO-friendly, optimized content that still reads naturally',
+          '- Do NOT include any URL in the text — it is added separately as a link',
           '- Do NOT use quotes around the title',
           '- Write in first-person plural ("we", "our") or second-person ("you")',
         ].join('\n'),
