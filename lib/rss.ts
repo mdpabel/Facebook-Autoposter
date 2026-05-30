@@ -8,6 +8,7 @@ export type RssItem = {
   pubDate: string;
   image?: string;
   images: string[];
+  headings: string[];
 };
 
 type MediaContent = { $?: { url?: string } };
@@ -28,6 +29,18 @@ const parser = new Parser<Record<string, unknown>, CustomItem>({
     ],
   },
 });
+
+function extractHeadings(html: string): string[] {
+  const headingRe = /<h[23][^>]*>([\s\S]*?)<\/h[23]>/gi;
+  const tagRe = /<[^>]+>/g;
+  const headings: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = headingRe.exec(html)) !== null) {
+    const text = m[1].replace(tagRe, '').trim();
+    if (text) headings.push(text);
+  }
+  return headings;
+}
 
 function extractImages(item: CustomItem & Parser.Item): string[] {
   const seen = new Set<string>();
@@ -62,7 +75,9 @@ export async function fetchRssItems(): Promise<RssItem[]> {
   if (!feedUrl) throw new Error('RSS_FEED_URL not set');
   const feed = await parser.parseURL(feedUrl);
   return (feed.items ?? []).map((item) => {
+    const html = item['content:encoded'] ?? item.content ?? '';
     const images = extractImages(item);
+    const headings = extractHeadings(html);
     return {
       id: (item.guid || item.link || item.title || String(Date.now())).trim(),
       title: item.title ?? '(no title)',
@@ -71,6 +86,7 @@ export async function fetchRssItems(): Promise<RssItem[]> {
       pubDate: item.pubDate ?? item.isoDate ?? new Date().toISOString(),
       image: images[0],
       images,
+      headings,
     };
   });
 }

@@ -102,6 +102,28 @@ export function schedulePost(params: {
   return fbFetch(`/${pid()}/feed`, { method: 'POST', body });
 }
 
+/**
+ * Post a single photo immediately or schedule it for a future time.
+ * scheduledTime is a Unix timestamp (seconds). Omit or pass 0 to publish immediately.
+ */
+export function schedulePhotoPost(params: {
+  message: string;
+  imageUrl: string;
+  scheduledTime?: number;
+}): Promise<{ id: string }> {
+  const body = new URLSearchParams({
+    url: params.imageUrl,
+    message: params.message,
+    access_token: tok(),
+  });
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (params.scheduledTime && params.scheduledTime > nowSec + 60) {
+    body.set('published', 'false');
+    body.set('scheduled_publish_time', String(params.scheduledTime));
+  }
+  return fbFetch(`/${pid()}/photos`, { method: 'POST', body });
+}
+
 export function deletePost(postId: string): Promise<{ success: boolean }> {
   return fbFetch(`/${postId}?access_token=${tok()}`, { method: 'DELETE' });
 }

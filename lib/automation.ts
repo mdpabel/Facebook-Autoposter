@@ -1,8 +1,9 @@
 import { readConfig, writeConfig } from './rss-config';
 import { fetchRssItems } from './rss';
 import { appendHistory, isPosted } from './rss-history';
-import { createPost, createMultiPhotoPost, uploadPhoto } from './facebook';
-import { generateFbPost } from './openai-post';
+import { createPost, schedulePhotoPost } from './facebook';
+import { generateFbPost, generateFbPostFromImage } from './openai-post';
+import redis from './redis';
 
 export type AutomationSummary = {
   posted: string[];
@@ -11,21 +12,14 @@ export type AutomationSummary = {
   disabled?: boolean;
 };
 
-async function publishItem(
-  message: string,
-  images: string[],
-  link: string,
-  includeImage: boolean,
-): Promise<{ id: string }> {
-  const imgs = includeImage ? images.slice(0, 5) : [];
+const NEXT_SLOT_KEY = 'rss:next_slot';
 
-  if (imgs.length > 0) {
-    const uploaded = await Promise.all(imgs.map((url) => uploadPhoto(url)));
-    const photoIds = uploaded.map((p) => p.id);
-    return createMultiPhotoPost({ message, photoIds, link: link || undefined });
-  }
-
-  return createPost({ message, link: link || undefined });
+async function claimSlot(): Promise<number> {
+  const stored = await redis.get<number>(NEXT_SLOT_KEY);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const slot = stored && stored > nowSec ? stored : nowSec;
+  await redis.set(NEXT_SLOT_KEY, slot + 3600);
+  return slot;
 }
 
 function weekStart() {
@@ -55,10 +49,37 @@ export async function runAutomation(): Promise<AutomationSummary> {
   }
 
   for (const item of toPost) {
+    const featuredImage = cfg.includeImage ? item.image : undefined;
+
     try {
-      const message = await generateFbPost(item);
-      const result = await publishItem(message, item.images, item.link, cfg.includeImage);
-      await appendHistory({ id: item.id, title: item.title, fbPostId: result.id, status: 'posted', timestamp: new Date().toISOString() });
+      let result: { id: string };
+
+      if (featuredImage) {
+        const message = await generateFbPostFromImage({
+          imageUrl: featuredImage,
+          headings: item.headings,
+          title: item.title,
+          link: item.link,
+        });
+        const slot = await claimSlot();
+        result = await schedulePhotoPost({
+          message,
+          imageUrl: featuredImage,
+          scheduledTime: slot,
+        });
+      } else {
+        // No image: text-only post with link appended
+        const text = await generateFbPost(item);
+        result = await createPost({ message: `${text}\n\n${item.link}` });
+      }
+
+      await appendHistory({
+        id: item.id,
+        title: item.title,
+        fbPostId: result.id,
+        status: 'posted',
+        timestamp: new Date().toISOString(),
+      });
       cfg.autoPostsThisWeek = (cfg.autoPostsThisWeek ?? 0) + 1;
       cfg.lastPostedTitle = item.title;
       summary.posted.push(item.title);
