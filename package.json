@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@atproto/api": "^0.20.7",
     "@upstash/qstash": "^2.11.0",
     "@upstash/redis": "^1.38.0",
     "jose": "^6.2.3",

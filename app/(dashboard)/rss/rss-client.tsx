@@ -56,8 +56,7 @@ export function RssClient({ config: initialConfig, history }: { config: RssConfi
       if (!res.ok) { toast.error(res.error ?? 'Run failed'); return; }
       const s = res.summary!;
       if (s.disabled) { toast.info('Automation is disabled'); return; }
-      const bsky = s.bluesky ? ` · Bluesky: ${s.bluesky.posted} posted, ${s.bluesky.pending} pending` : '';
-      toast.success(`Done: ${s.posted.length} posted, ${s.skipped} skipped, ${s.failed.length} failed${bsky}`);
+      toast.success(`Done: ${s.posted.length} posted, ${s.skipped} skipped, ${s.failed.length} failed`);
       router.refresh();
     });
   }

@@ -102,56 +102,6 @@ export function schedulePost(params: {
   return fbFetch(`/${pid()}/feed`, { method: 'POST', body });
 }
 
-/**
- * Post a single photo immediately or schedule it for a future time.
- * For immediate posts: POST directly to /photos.
- * For scheduled posts: upload photo as unpublished, then create a scheduled feed post
- * with attached_media so it appears in /{page}/scheduled_posts.
- */
-export async function schedulePhotoPost(params: {
-  message: string;
-  imageUrl: string;
-  scheduledTime?: number;
-}): Promise<{ id: string }> {
-  const nowSec = Math.floor(Date.now() / 1000);
-  const isScheduled = !!params.scheduledTime && params.scheduledTime > nowSec + 60;
-
-  if (!isScheduled) {
-    const body = new URLSearchParams({
-      url: params.imageUrl,
-      message: params.message,
-      access_token: tok(),
-    });
-    return fbFetch(`/${pid()}/photos`, { method: 'POST', body });
-  }
-
-  // Step 1: upload photo as unpublished
-  const photoBody = new URLSearchParams({ url: params.imageUrl, published: 'false', access_token: tok() });
-  const photo = await fbFetch<{ id: string }>(`/${pid()}/photos`, { method: 'POST', body: photoBody });
-
-  // Step 2: create scheduled feed post with attached photo — appears in /scheduled_posts
-  const feedBody = new URLSearchParams({
-    message: params.message,
-    published: 'false',
-    scheduled_publish_time: String(params.scheduledTime),
-    attached_media: JSON.stringify([{ media_fbid: photo.id }]),
-    access_token: tok(),
-  });
-  return fbFetch(`/${pid()}/feed`, { method: 'POST', body: feedBody });
-}
-
-export function getScheduledPosts(): Promise<FBPostsResponse> {
-  return fbFetch(
-    `/${pid()}/scheduled_posts?fields=message,created_time,scheduled_publish_time,permalink_url,full_picture&access_token=${tok()}`
-  );
-}
-
-/** Immediately publish a scheduled post. Works for both feed posts and photo posts. */
-export function publishScheduledPost(postId: string): Promise<{ id: string }> {
-  const body = new URLSearchParams({ published: 'true', access_token: tok() });
-  return fbFetch(`/${postId}`, { method: 'POST', body });
-}
-
 export function deletePost(postId: string): Promise<{ success: boolean }> {
   return fbFetch(`/${postId}?access_token=${tok()}`, { method: 'DELETE' });
 }

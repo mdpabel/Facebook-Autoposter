@@ -1,22 +1,32 @@
 import { readConfig, writeConfig } from './rss-config';
-import { fetchRssItems, fetchOgImage, fetchPostImages, type PostImage } from './rss';
+import { fetchRssItems } from './rss';
 import { appendHistory, isPosted } from './rss-history';
-import { createPost, schedulePhotoPost } from './facebook';
-import { generateFbPost, generateFbPostFromImage } from './openai-post';
-import { enqueueBluesky, drainBlueskyQueue } from './bluesky-queue';
-
-// Hard cap on posts created per article so a 50-image article can't flood the queue.
-const MAX_IMAGES_PER_ARTICLE = 12;
+import { createPost, createMultiPhotoPost, uploadPhoto } from './facebook';
+import { generateFbPost } from './openai-post';
 
 export type AutomationSummary = {
   posted: string[];
   skipped: number;
   failed: { title: string; error: string }[];
   disabled?: boolean;
-  bluesky?: { posted: number; failed: number; pending: number };
 };
 
-const nowSec = () => Math.floor(Date.now() / 1000);
+async function publishItem(
+  message: string,
+  images: string[],
+  link: string,
+  includeImage: boolean,
+): Promise<{ id: string }> {
+  const imgs = includeImage ? images.slice(0, 5) : [];
+
+  if (imgs.length > 0) {
+    const uploaded = await Promise.all(imgs.map((url) => uploadPhoto(url)));
+    const photoIds = uploaded.map((p) => p.id);
+    return createMultiPhotoPost({ message, photoIds, link: link || undefined });
+  }
+
+  return createPost({ message, link: link || undefined });
+}
 
 function weekStart() {
   const d = new Date();
@@ -46,64 +56,9 @@ export async function runAutomation(): Promise<AutomationSummary> {
 
   for (const item of toPost) {
     try {
-      // Build the image list (featured first, then every content image — one post each).
-      // Priority: feed images → WordPress REST API (full content) → article OG image.
-      let images: PostImage[] = [];
-      if (cfg.includeImage) {
-        images = item.images.map((url) => ({ url, alt: '' }));
-        if (images.length === 0 && item.link) {
-          images = await fetchPostImages(item.link);
-        }
-        if (images.length === 0 && item.link) {
-          const og = await fetchOgImage(item.link);
-          if (og) images = [{ url: og, alt: '' }];
-        }
-        images = images.slice(0, MAX_IMAGES_PER_ARTICLE);
-      }
-
-      let lastPostId: string | undefined;
-
-      if (images.length === 0) {
-        // No image anywhere → text-only post with the link.
-        const caption = await generateFbPost(item);
-        const res = await createPost({ message: `${caption}\n\n${item.link}` });
-        lastPostId = res.id;
-        await enqueueBluesky({ caption, link: item.link, publishAt: nowSec() });
-      } else {
-        // One post per image — all published immediately to both platforms (no FB
-        // scheduling) so Facebook and Bluesky can be tested together.
-        let postedCount = 0;
-        for (const img of images) {
-          try {
-            const caption = await generateFbPostFromImage({
-              imageUrl: img.url,
-              alt: img.alt,
-              headings: item.headings,
-              title: item.title,
-            });
-            const res = await schedulePhotoPost({
-              message: `${caption}\n\n${item.link}`,
-              imageUrl: img.url,
-            });
-            lastPostId = res.id;
-            await enqueueBluesky({ caption, link: item.link, imageUrl: img.url, alt: img.alt, publishAt: nowSec() });
-            postedCount++;
-          } catch (imgErr) {
-            const msg = imgErr instanceof Error ? imgErr.message : String(imgErr);
-            summary.failed.push({ title: `${item.title} (image)`, error: msg });
-          }
-        }
-        // If every image failed, surface the article as failed and retry next run.
-        if (postedCount === 0) throw new Error('All image posts failed');
-      }
-
-      await appendHistory({
-        id: item.id,
-        title: item.title,
-        fbPostId: lastPostId,
-        status: 'posted',
-        timestamp: new Date().toISOString(),
-      });
+      const message = await generateFbPost(item);
+      const result = await publishItem(message, item.images, item.link, cfg.includeImage);
+      await appendHistory({ id: item.id, title: item.title, fbPostId: result.id, status: 'posted', timestamp: new Date().toISOString() });
       cfg.autoPostsThisWeek = (cfg.autoPostsThisWeek ?? 0) + 1;
       cfg.lastPostedTitle = item.title;
       summary.posted.push(item.title);
@@ -116,8 +71,5 @@ export async function runAutomation(): Promise<AutomationSummary> {
 
   cfg.lastCheckTime = new Date().toISOString();
   await writeConfig(cfg);
-
-  // Publish the Bluesky posts queued this run (all due immediately).
-  summary.bluesky = await drainBlueskyQueue();
   return summary;
 }

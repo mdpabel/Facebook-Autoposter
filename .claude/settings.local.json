@@ -4,8 +4,7 @@
       "Bash(npm install *)",
       "Bash(Remove-Item *)",
       "Bash(npx tsc *)",
-      "Bash(npm run *)",
-      "Bash(node -e ' *)"
+      "Bash(npm run *)"
     ]
   }
 }
